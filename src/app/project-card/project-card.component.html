@@ -1,0 +1,14 @@
+<div class="card shadow text-center" style="max-width:500px; min-width: 500px;">
+    <div class="card-body">
+        <h5 class="card-title">{{project.name}}</h5>
+        <P class="card-text">{{project.summary}}</P>
+        <button class="btn btn-primary" (click)="OpenProjectModal()">Plus</button>
+    </div>
+    <div class="card-footer">
+        <div class="d-flex flex-wrap justify-content-center">
+            <div *ngFor="let tag of project.tags">
+                <div class="tag me-2 mb-1" [style.background-color]="tag.color">{{tag}}</div>
+            </div>
+        </div>
+    </div>
+</div>
