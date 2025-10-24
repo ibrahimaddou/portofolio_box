@@ -386,3 +386,16 @@ export class ParentComponent {
   </app-document>
 </div>
 */
+
+
+isProcessing(docId: string): Observable<boolean> {
+    return this.store.select(DocumentSelectors.selectIsProcessing(docId));
+  }
+
+  getDocumentStatus(docId: string): Observable<string | undefined> {
+    return this.store.select(DocumentSelectors.selectDocumentStatus(docId));
+  }
+
+  getError(docId: string): Observable<string | undefined> {
+    return this.store.select(DocumentSelectors.selectDocumentError(docId));
+  }
