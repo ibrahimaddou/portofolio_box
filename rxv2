@@ -1,0 +1,388 @@
+// ============================================
+// 1. ACTIONS (document.actions.ts)
+// ============================================
+import { createAction, props } from '@ngrx/store';
+
+export const setDocumentStatus = createAction(
+  '[Document] Set Document Status',
+  props<{ documentId: string; newStatus: string }>()
+);
+
+export const setDocumentStatusSuccess = createAction(
+  '[Document] Set Document Status Success',
+  props<{ documentId: string; status: string }>()
+);
+
+export const setDocumentStatusFailure = createAction(
+  '[Document] Set Document Status Failure',
+  props<{ documentId: string; error: string }>()
+);
+
+// ============================================
+// 2. STATE (document.state.ts)
+// ============================================
+export interface DocumentState {
+  processingDocuments: { [documentId: string]: boolean };
+  documentStatuses: { [documentId: string]: string };
+  errors: { [documentId: string]: string };
+}
+
+export const initialState: DocumentState = {
+  processingDocuments: {},
+  documentStatuses: {},
+  errors: {}
+};
+
+// ============================================
+// 3. REDUCER (document.reducer.ts)
+// ============================================
+import { createReducer, on } from '@ngrx/store';
+import * as DocumentActions from './document.actions';
+
+export const documentReducer = createReducer(
+  initialState,
+  
+  // Set Document Status
+  on(DocumentActions.setDocumentStatus, (state, { documentId }) => ({
+    ...state,
+    processingDocuments: {
+      ...state.processingDocuments,
+      [documentId]: true
+    }
+  })),
+  
+  on(DocumentActions.setDocumentStatusSuccess, (state, { documentId, status }) => ({
+    ...state,
+    processingDocuments: {
+      ...state.processingDocuments,
+      [documentId]: false
+    },
+    documentStatuses: {
+      ...state.documentStatuses,
+      [documentId]: status
+    },
+    errors: {
+      ...state.errors,
+      [documentId]: undefined
+    }
+  })),
+  
+  on(DocumentActions.setDocumentStatusFailure, (state, { documentId, error }) => ({
+    ...state,
+    processingDocuments: {
+      ...state.processingDocuments,
+      [documentId]: false
+    },
+    errors: {
+      ...state.errors,
+      [documentId]: error
+    }
+  }))
+);
+
+// ============================================
+// 4. SELECTORS (document.selectors.ts)
+// ============================================
+import { createFeatureSelector, createSelector } from '@ngrx/store';
+import { DocumentState } from './document.state';
+
+export const selectDocumentState = createFeatureSelector<DocumentState>('document');
+
+export const selectIsProcessing = (documentId: string) =>
+  createSelector(
+    selectDocumentState,
+    (state: DocumentState) => state.processingDocuments[documentId] || false
+  );
+
+export const selectDocumentStatus = (documentId: string) =>
+  createSelector(
+    selectDocumentState,
+    (state: DocumentState) => state.documentStatuses[documentId]
+  );
+
+export const selectDocumentError = (documentId: string) =>
+  createSelector(
+    selectDocumentState,
+    (state: DocumentState) => state.errors[documentId]
+  );
+
+// ============================================
+// 5. EFFECTS (document.effects.ts)
+// ============================================
+import { Injectable } from '@angular/core';
+import { Actions, createEffect, ofType } from '@ngrx/effects';
+import { of } from 'rxjs';
+import { map, catchError, exhaustMap } from 'rxjs/operators';
+import * as DocumentActions from './document.actions';
+import { DocumentService } from '../services/document.service'; // Your service
+
+@Injectable()
+export class DocumentEffects {
+  
+  setDocumentStatus$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(DocumentActions.setDocumentStatus),
+      exhaustMap(({ documentId, newStatus }) =>
+        this.documentService.setDocumentStatus(documentId, newStatus).pipe(
+          map(() => DocumentActions.setDocumentStatusSuccess({ 
+            documentId, 
+            status: newStatus 
+          })),
+          catchError((error) =>
+            of(DocumentActions.setDocumentStatusFailure({ 
+              documentId, 
+              error: error.message 
+            }))
+          )
+        )
+      )
+    )
+  );
+
+  constructor(
+    private actions$: Actions,
+    private documentService: DocumentService
+  ) {}
+}
+
+// ============================================
+// 6. SERVICE (document.service.ts)
+// ============================================
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class DocumentService {
+  private apiUrl = 'YOUR_API_URL'; // Replace with your API URL
+
+  constructor(private http: HttpClient) {}
+
+  setDocumentStatus(documentId: string, newStatus: string): Observable<any> {
+    return this.http.put(`${this.apiUrl}/documents/${documentId}/status`, { 
+      status: newStatus 
+    });
+  }
+}
+
+// ============================================
+// 7. COMPONENT (document.component.ts)
+// ============================================
+import { Component, Input } from '@angular/core';
+import { Store } from '@ngrx/store';
+import { Observable } from 'rxjs';
+import * as DocumentActions from './store/document.actions';
+import * as DocumentSelectors from './store/document.selectors';
+
+@Component({
+  selector: 'app-document',
+  templateUrl: './document.component.html',
+  styleUrls: ['./document.component.css']
+})
+export class DocumentComponent {
+  @Input() documentId!: string;
+  @Input() documentTitle!: string;
+  @Input() currentDocStatus!: string; // Current status from backend
+
+  isProcessing$!: Observable<boolean>;
+  documentStatus$!: Observable<string | undefined>;
+  error$!: Observable<string | undefined>;
+
+  constructor(private store: Store) {}
+
+  ngOnInit() {
+    this.isProcessing$ = this.store.select(
+      DocumentSelectors.selectIsProcessing(this.documentId)
+    );
+    this.documentStatus$ = this.store.select(
+      DocumentSelectors.selectDocumentStatus(this.documentId)
+    );
+    this.error$ = this.store.select(
+      DocumentSelectors.selectDocumentError(this.documentId)
+    );
+  }
+
+  onValidate(docId: string) {
+    const newStatus = 'VALIDATED';
+    this.store.dispatch(
+      DocumentActions.setDocumentStatus({ 
+        documentId: docId, 
+        newStatus 
+      })
+    );
+  }
+
+  onRefuse(docId: string) {
+    const newStatus = 'REFUSED';
+    this.store.dispatch(
+      DocumentActions.setDocumentStatus({ 
+        documentId: docId, 
+        newStatus 
+      })
+    );
+  }
+}
+
+// ============================================
+// 8. TEMPLATE (document.component.html)
+// ============================================
+/*
+<div class="document-card">
+  <h3>{{ documentTitle }}</h3>
+  <p class="current-status">Current Status: {{ currentDocStatus }}</p>
+  
+  <div class="button-group">
+    <button 
+      class="btn btn-validate"
+      (click)="onValidate(documentId)"
+      [disabled]="(isProcessing$ | async) || (documentStatus$ | async)"
+      [class.processing]="isProcessing$ | async"
+      [class.validated]="(documentStatus$ | async) === 'VALIDATED'">
+      <ng-container *ngIf="(documentStatus$ | async) === 'VALIDATED'">
+        ✓ Validated
+      </ng-container>
+      <ng-container *ngIf="(documentStatus$ | async) !== 'VALIDATED'">
+        <span *ngIf="!(isProcessing$ | async)">Validate</span>
+        <span *ngIf="isProcessing$ | async">Processing...</span>
+      </ng-container>
+    </button>
+    
+    <button 
+      class="btn btn-refuse"
+      (click)="onRefuse(documentId)"
+      [disabled]="(isProcessing$ | async) || (documentStatus$ | async)"
+      [class.processing]="isProcessing$ | async"
+      [class.refused]="(documentStatus$ | async) === 'REFUSED'">
+      <ng-container *ngIf="(documentStatus$ | async) === 'REFUSED'">
+        ✗ Refused
+      </ng-container>
+      <ng-container *ngIf="(documentStatus$ | async) !== 'REFUSED'">
+        <span *ngIf="!(isProcessing$ | async)">Refuse</span>
+        <span *ngIf="isProcessing$ | async">Processing...</span>
+      </ng-container>
+    </button>
+  </div>
+  
+  <div *ngIf="error$ | async as error" class="error-message">
+    {{ error }}
+  </div>
+</div>
+*/
+
+// ============================================
+// 9. STYLES (document.component.css)
+// ============================================
+/*
+.document-card {
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+.current-status {
+  color: #666;
+  font-size: 14px;
+  margin: 10px 0;
+}
+
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-validate {
+  background-color: #28a745;
+  color: white;
+}
+
+.btn-validate:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.btn-validate.validated {
+  background-color: #155724;
+}
+
+.btn-refuse {
+  background-color: #dc3545;
+  color: white;
+}
+
+.btn-refuse:hover:not(:disabled) {
+  background-color: #c82333;
+}
+
+.btn-refuse.refused {
+  background-color: #721c24;
+}
+
+.btn.processing {
+  opacity: 0.8;
+}
+
+.error-message {
+  color: #dc3545;
+  margin-top: 10px;
+  font-size: 14px;
+}
+*/
+
+// ============================================
+// 10. APP MODULE CONFIGURATION (app.module.ts)
+// ============================================
+/*
+import { StoreModule } from '@ngrx/store';
+import { EffectsModule } from '@ngrx/effects';
+import { documentReducer } from './store/document.reducer';
+import { DocumentEffects } from './store/document.effects';
+
+@NgModule({
+  imports: [
+    StoreModule.forRoot({ document: documentReducer }),
+    EffectsModule.forRoot([DocumentEffects]),
+    // ... other imports
+  ],
+  // ... rest of module
+})
+*/
+
+// ============================================
+// 11. USAGE EXAMPLE IN PARENT COMPONENT
+// ============================================
+/*
+// parent.component.ts
+export class ParentComponent {
+  documents = [
+    { id: '1', title: 'Document 1', docStatus: 'PENDING' },
+    { id: '2', title: 'Document 2', docStatus: 'PENDING' },
+    { id: '3', title: 'Document 3', docStatus: 'VALIDATED' }
+  ];
+}
+
+// parent.component.html
+<div *ngFor="let doc of documents">
+  <app-document 
+    [documentId]="doc.id" 
+    [documentTitle]="doc.title"
+    [currentDocStatus]="doc.docStatus">
+  </app-document>
+</div>
+*/
